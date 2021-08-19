@@ -1,3 +1,5 @@
+## Esto es solo una beta, puede contener errores
+
 ### Login
 * Usuario: root
 * Contraseña: 12345

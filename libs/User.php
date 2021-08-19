@@ -1,6 +1,10 @@
 <?php
 /*
- * Copyright (c) 2020. [D_n]Codex
+ * [D_n]Codex 2021
+ */
+
+/*
+ * [D_n]Codex 2021
  */
 
 class User
