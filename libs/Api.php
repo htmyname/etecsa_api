@@ -1,62 +1,115 @@
 <?php
 /*
- * Copyright (c) 2020. [D_n]Codex
+ * [D_n]Codex 2021
  */
 
 require_once 'User.php';
 
 class Api
 {
-    protected $user;
-    protected $password;
-    protected $respuesta;
+    protected $api_user;
+    protected $api_password;
     protected $deny_list;
     protected $url;
 
     /**
      * App constructor.
      */
-    public function __construct()
+    public function __construct($api_user, $api_password, $deny_list, $url)
     {
-        $this->deny_list = ['printJSON', 'getAvailableTime', 'checkSession'];
-        $this->url = ['autApi'];
-        session_start();
+        $this->api_user = $api_user;
+        $this->api_password = $api_password;
+        $this->deny_list = $deny_list;
+        $this->url = $url;
     }
 
-    public function autApi()
+    /**
+     * @return mixed
+     */
+    public function getApiUser(): string
     {
-        if (isset($_POST['user'], $_POST['password'])) {
-            $this->user = $_POST['user'];
-            $this->password = $_POST['password'];
-            if ($this->user == USER_API && $this->password == PASS_API) {
-                $_SESSION['loged'] = 'true';
-                $this->respuesta = ['login' => 'true'];
-            }
-        } else {
-            $_SESSION['loged'] = 'false';
-            $this->respuesta = ['login' => 'false'];
-        }
-        $this->printJSON($this->respuesta);
+        return $this->api_user;
     }
 
-    public function outApi()
+    /**
+     * @param mixed $api_user
+     */
+    public function setApiUser($api_user): void
     {
-        $msg = ['logout' => 'false'];
-        if (session_status() == 2) {
-            session_unset();
-            session_destroy();
-            $msg = ['logout' => 'true'];
-        }
-        $this->printJSON($msg);
+        $this->api_user = $api_user;
     }
 
-    public function connect()
+    /**
+     * @return mixed
+     */
+    public function getApiPassword(): string
+    {
+        return $this->api_password;
+    }
+
+    /**
+     * @param mixed $api_password
+     */
+    public function setApiPassword($api_password): void
+    {
+        $this->api_password = $api_password;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getDenyList(): array
+    {
+        return $this->deny_list;
+    }
+
+    /**
+     * @param mixed $deny_list
+     */
+    public function setDenyList($deny_list): void
+    {
+        $this->deny_list = $deny_list;
+    }
+
+    /**
+     * @return array
+     */
+    public function getURL(): array
+    {
+        return explode('/', rtrim($this->url, '/'));
+    }
+
+    /**
+     * @param mixed $url
+     */
+    public function setURL($url): void
+    {
+        $this->url = strtolower($url);
+    }
+
+
+    public function autApi(): void
+    {
+        $this->printJSON([
+            'login' => $_SESSION['loged'] = !(isset($_POST['user'], $_POST['password'])) ? 'false'
+                : var_export($this->getApiUser() === $_POST['user'] && $this->getApiPassword() === $_POST['password'], true)
+        ]);
+    }
+
+    public function outApi(): void
+    {
+        $this->printJSON([
+            'logout' => $msg = (session_status() === 2 && session_unset() && session_destroy()) ? 'true' : 'false'
+        ]);
+    }
+
+    /*public function connects()
     {
         $msg = ['msg' => 'false'];
         $sendResponse = false;
         $error_msg = NO_CONECTADO;
 
-        $this->chkSession($msg);
+        $this->checkSession($msg);
 
         if (isset($_POST['user'], $_POST['password'])) {
             $user = new User($_POST['user'], $_POST['password']);
@@ -169,15 +222,70 @@ class Api
 
         $this->printJSON($json);
 
+    }*/
+
+    public function connect()
+    {
+        $sendResponse = false;
+        $error_msg = NO_CONECTADO;
+        $ATTRIBUTE_UUID = $CSRFHW = $wlanuserip = $ssid =
+        $loggerId = $domain = $username = $wlanacname = $wlanmac = '';
+
+        if (!$this->checkSession()) {
+            $this->printJSON(['msg' => 'false']);
+        }
+        if (!isset($_POST['user'], $_POST['password'])) {
+            $this->printJSON(['msg' => 'false']);
+        }
+
+        $user = new User($_POST['user'], $_POST['password']);
+        $url = "https://secure.etecsa.net:8443//LoginServlet?username={$user->getUser()}&password={$user->getPassword()}";
+        $response = preg_split("([\r]+)", $this->curlApi($url));
+
+
+        foreach ($response as $line) {
+            echo $line;
+            foreach (WEB_STRING as $key => $value) {
+                if ($value !== '') {
+                    if ($temp_line = @strrpos($line, $key)) {
+                        $val = explode(',', $value);
+                        $$key = substr($line, $temp_line + $val[0], $val[1]);
+                    }
+                }else if (@strrpos($line, $key)) {
+                    if ($key === 'Usted está conectado') {
+                        $sendResponse = true;
+                    }
+                    $error_msg = $key;
+                }
+            }
+        }
+
+        if ($sendResponse === true) {
+
+            $dataLogout = "ATTRIBUTE_UUID=" . $ATTRIBUTE_UUID . "&CSRFHW=" . $CSRFHW . "&wlanuserip=" . $wlanuserip . "&ssid=" . $ssid . "&loggerId=" . $loggerId . "&domain=" . $domain . "&username=" . $username . "&wlanacname=" . $wlanacname . "&wlanmac=" . $wlanmac . "&remove=1";
+            $dataUpdate = "ATTRIBUTE_UUID=" . $ATTRIBUTE_UUID . "&CSRFHW=" . $CSRFHW . "&wlanuserip=" . $wlanuserip . "&ssid=" . $ssid . "&loggerId=" . $loggerId . "&domain=" . $domain . "&username=" . $username . "&wlanacname=" . $wlanacname . "&wlanmac=" . $wlanmac;
+            $con_ini = time();
+
+            $conex_json = ['dataLogout' => $dataLogout, 'dataUpdate' => $dataUpdate, 'con_ini' => $con_ini];
+
+            $json = array($conex_json, ['msg' => $error_msg]);
+        } else {
+            $json = array(['msg' => $error_msg]);
+        }
+
+        $this->printJSON($json);
+
     }
 
     public function disconnect()
     {
-        $msg = ['msg' => 'false'];
-        $json_msg = $msg;
+        //$msg = ['msg' => 'false'];
+        $json_msg = ['msg' => 'false'];
         $con_fin = time(); //hora en la que cierras session
 
-        $this->chkSession($msg);
+        if (!$this->checkSession()) {
+            $this->printJSON(['msg' => 'false']);
+        }
 
         if (isset($_POST['dataLogout'], $_POST['con_ini'], $_POST['tiempo'],
             $_POST['tiempo_real'], $_POST['saldo'], $_POST['internet_price'])) {
@@ -188,7 +296,7 @@ class Api
             $saldo_dis = $_POST['saldo'];
             $centavosXhora = $_POST['internet_price'];
         } else {
-            $this->printJSON($msg);
+            $this->printJSON(['msg' => 'false']);
         }
 
         $horaEnSegundos = 3600;
@@ -209,7 +317,7 @@ class Api
                 $time_dis = 0;
             }
 
-            $time_dis_json = $this->getTimeDisponible($time_dis);
+            $time_dis_json = $this->getAvailableTime($time_dis);
 
             $url = "https://secure.etecsa.net:8443/LogoutServlet?" . $dataLogout;
 
@@ -248,21 +356,23 @@ class Api
             $this->printJSON($json_msg);
 
         } else {
-            $this->printJSON($msg);
+            $this->printJSON(['msg' => 'false']);
         }
     }
 
     public function getTime()
     {
-        $msg = ['msg' => 'false'];
+        //$msg = ['msg' => 'false'];
 
-        $this->chkSession($msg);
+        if (!$this->checkSession()) {
+            $this->printJSON(['msg' => 'false']);
+        }
 
         if (isset($_POST['internet_price'], $_POST['dataUpdate'])) {
             $centavosXhora = $_POST['internet_price'];
             $dataUpdate = $_POST['dataUpdate'];
         } else {
-            $this->printJSON($msg);
+            $this->printJSON(['msg' => 'false']);
         }
 
         $horaEnSegundos = 3600;
@@ -336,40 +446,39 @@ class Api
         return $horas . ':' . $minutos . ":" . $segundos;
     }
 
-    private function checkSession($msg)
+    private function checkSession()
     {
-        if (isset($_SESSION['loged'])) {
-            if ($_SESSION['loged'] != 'true') {
-                $this->printJSON($msg);
-            }
-        } else {
-            $this->printJSON($msg);
-        }
+        return (isset($_SESSION['loged']) && $_SESSION['loged'] === 'true');
     }
 
-    function methodExists(): bool
+    public function methodExists(): bool
     {
         $url = $this->getURL();
-        return !method_exists(Api::class, $url[0]) || in_array(true, array_map(static function ($deny) use ($url) {
-                return strcasecmp($url[0], $deny) === 0;
-            }, $this->deny_list), true);
+        return !method_exists(Api::class, $url[0]) || in_array($url[0], $this->deny_list);
     }
 
-    public function printJSON($json)
+    public function curlApi($url)
     {
-        header("Content-Type:application/json;charset=utf-8");
+        $ch = curl_init($url);
+
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/x-www-form-urlencoded'));
+        curl_setopt($ch, CURLOPT_POST, 1);
+        curl_setopt($ch, CURLOPT_COOKIESESSION, 1);
+        curl_setopt($ch, CURLOPT_COOKIEJAR, 'libs\cookies');
+        curl_setopt($ch, CURLOPT_COOKIEFILE, 'libs\cookies');
+        curl_setopt($ch, CURLOPT_HEADER, TRUE);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 1);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        $info = curl_exec($ch);
+        curl_close($ch);
+        return $info;
+    }
+
+    public function printJSON($json): void
+    {
+        //header("Content-Type:application/json;charset=utf-8");
         echo json_encode($json);
         exit();
-    }
-
-    function getURL()
-    {
-        return explode('/', rtrim($this->url, '/'));
-    }
-
-    function setURL($url)
-    {
-        $this->url = $url;
     }
 
 }
