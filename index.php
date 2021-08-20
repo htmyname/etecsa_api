@@ -8,10 +8,12 @@ session_start();
 require_once 'libs/configs.php';
 require_once 'libs/Api.php';
 
-$api = new Api(USER_API, PASS_API, DENY_LIST, DEFAULT_URL);
+$api = new Api(USER_API, PASS_API, DENY_LIST);
 
 if (isset($_GET['url'])) {
     $api->setURL($_GET['url']);
+} else {
+    $api->setURL(DEFAULT_URL);
 }
 
 if ($api->methodExists()) {

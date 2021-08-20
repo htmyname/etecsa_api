@@ -7,111 +7,99 @@ require_once 'User.php';
 
 class Api
 {
-    protected $api_user;
-    protected $api_password;
-    protected $deny_list;
-    protected $url;
+    private string $api_user;
+    private string $api_password;
+    private array $deny_list;
+    private array $url;
+    private bool $response;
+    private string $error_msg;
 
     /**
      * App constructor.
      */
-    public function __construct($api_user, $api_password, $deny_list, $url)
+    public function __construct($api_user, $api_password, $deny_list)
     {
         $this->api_user = $api_user;
         $this->api_password = $api_password;
         $this->deny_list = $deny_list;
-        $this->url = $url;
+        $this->response = false;
+        $this->error_msg = NO_CONECTADO;
     }
 
-    /**
-     * @return mixed
-     */
     public function getApiUser(): string
     {
         return $this->api_user;
     }
 
-    /**
-     * @param mixed $api_user
-     */
-    public function setApiUser($api_user): void
-    {
-        $this->api_user = $api_user;
-    }
-
-    /**
-     * @return mixed
-     */
     public function getApiPassword(): string
     {
         return $this->api_password;
     }
 
-    /**
-     * @param mixed $api_password
-     */
-    public function setApiPassword($api_password): void
-    {
-        $this->api_password = $api_password;
-    }
-
-    /**
-     * @return mixed
-     */
     public function getDenyList(): array
     {
         return $this->deny_list;
     }
 
-    /**
-     * @param mixed $deny_list
-     */
-    public function setDenyList($deny_list): void
-    {
-        $this->deny_list = $deny_list;
-    }
-
-    /**
-     * @return array
-     */
     public function getURL(): array
     {
-        return explode('/', rtrim($this->url, '/'));
+        return $this->url;
     }
 
-    /**
-     * @param mixed $url
-     */
-    public function setURL($url): void
+    public function setURL(string $url): void
     {
-        $this->url = strtolower($url);
+        $this->url = explode('/', strtolower(rtrim($url, '/')));
+    }
+
+    public function getResponse(): bool
+    {
+        return $this->response;
+    }
+
+    public function setResponse(bool $response): void
+    {
+        $this->response = $response;
+    }
+
+
+    public function getErrorMsg()
+    {
+        return $this->error_msg;
+    }
+
+    public function setErrorMsg(string $error_msg): void
+    {
+        $this->error_msg = $error_msg;
     }
 
 
     public function autApi(): void
     {
-        $this->printJSON([
-            'login' => $_SESSION['loged'] = !(isset($_POST['user'], $_POST['password'])) ? 'false'
-                : var_export($this->getApiUser() === $_POST['user'] && $this->getApiPassword() === $_POST['password'], true)
-        ]);
+        if ($this->getHTTPMethod('POST')) {
+            $this->printJSON([
+                'login' => $_SESSION['login'] = !(isset($_POST['user'], $_POST['password'])) ? 'false'
+                    : var_export($this->getApiUser() === $_POST['user'] && $this->getApiPassword() === $_POST['password'], true)
+            ]);
+        }
     }
 
     public function outApi(): void
     {
-        $this->printJSON([
-            'logout' => $msg = (session_status() === 2 && session_unset() && session_destroy()) ? 'true' : 'false'
-        ]);
+        if ($this->getHTTPMethod('GET')) {
+            $this->printJSON([
+                'logout' => $msg = (session_status() === 2 && session_unset() && session_destroy()) ? 'true' : 'false'
+            ]);
+        }
     }
 
-    public function connect()
+
+    public function connect(): void
     {
-        $sendResponse = false;
-        $error_msg = NO_CONECTADO;
         $ATTRIBUTE_UUID = $CSRFHW = $wlanuserip = $ssid =
         $loggerId = $domain = $username = $wlanacname = $wlanmac = '';
 
         if (!$this->checkSession()) {
-            $this->printJSON(['msg' => 'false']);
+            $this->printJSON(['session' => 'false']);
         }
         if (!isset($_POST['user'], $_POST['password'])) {
             $this->printJSON(['msg' => 'false']);
@@ -119,37 +107,49 @@ class Api
 
         $user = new User($_POST['user'], $_POST['password']);
         $url = "https://secure.etecsa.net:8443//LoginServlet?username={$user->getUser()}&password={$user->getPassword()}";
-        $response = preg_split("([\r]+)", $this->curlApi($url));
+        $response = $this->getResult($url, 'connect');
 
-
-        foreach ($response as $line) {
-            echo $line;
-            foreach (WEB_STRING as $key => $value) {
-                if ($value !== '') {
-                    if ($temp_line = @strrpos($line, $key)) {
-                        $val = explode(',', $value);
-                        $$key = substr($line, $temp_line + $val[0], $val[1]);
+        if (count($response) > 0) {
+            foreach ($response as $line) {
+                if (!$this->getResponse()) {
+                    foreach (CONNECT_STR as $key => $value) {
+                        if ($value !== '') {
+                            if ($temp_line = @strrpos($line, $key)) {
+                                $val = explode(',', $value);
+                                $$key = substr($line, $temp_line + $val[0], $val[1]);
+                            }
+                        } else if (@strrpos($line, $key)) {
+                            if ($key === 'Usted está conectado') {
+                                $this->setResponse(true);
+                            }
+                            $this->setErrorMsg($key);
+                            break;
+                        }
                     }
-                }else if (@strrpos($line, $key)) {
-                    if ($key === 'Usted está conectado') {
-                        $sendResponse = true;
-                    }
-                    $error_msg = $key;
+                } else {
+                    break;
                 }
             }
         }
 
-        if ($sendResponse === true) {
-
-            $dataLogout = "ATTRIBUTE_UUID=" . $ATTRIBUTE_UUID . "&CSRFHW=" . $CSRFHW . "&wlanuserip=" . $wlanuserip . "&ssid=" . $ssid . "&loggerId=" . $loggerId . "&domain=" . $domain . "&username=" . $username . "&wlanacname=" . $wlanacname . "&wlanmac=" . $wlanmac . "&remove=1";
-            $dataUpdate = "ATTRIBUTE_UUID=" . $ATTRIBUTE_UUID . "&CSRFHW=" . $CSRFHW . "&wlanuserip=" . $wlanuserip . "&ssid=" . $ssid . "&loggerId=" . $loggerId . "&domain=" . $domain . "&username=" . $username . "&wlanacname=" . $wlanacname . "&wlanmac=" . $wlanmac;
-            $con_ini = time();
-
-            $conex_json = ['dataLogout' => $dataLogout, 'dataUpdate' => $dataUpdate, 'con_ini' => $con_ini];
-
-            $json = array($conex_json, ['msg' => $error_msg]);
+        if ($this->getResponse()) {
+            $dataLogout = "ATTRIBUTE_UUID=" . $ATTRIBUTE_UUID . "&CSRFHW=" . $CSRFHW . "&wlanuserip=" . $wlanuserip
+                . "&ssid=" . $ssid . "&loggerId=" . $loggerId . "&domain=" . $domain . "&username=" . $username
+                . "&wlanacname=" . $wlanacname . "&wlanmac=" . $wlanmac . "&remove=1";
+            $dataUpdate = "ATTRIBUTE_UUID=" . $ATTRIBUTE_UUID . "&CSRFHW=" . $CSRFHW . "&wlanuserip=" . $wlanuserip
+                . "&ssid=" . $ssid . "&loggerId=" . $loggerId . "&domain=" . $domain . "&username=" . $username
+                . "&wlanacname=" . $wlanacname . "&wlanmac=" . $wlanmac;
+            $json = [
+                [
+                    'dataLogout' => $dataLogout,
+                    'dataUpdate' => $dataUpdate,
+                    'con_ini' => time()
+                ], [
+                    'msg' => $this->getErrorMsg()
+                ]
+            ];
         } else {
-            $json = array(['msg' => $error_msg]);
+            $json = array(['msg' => $this->getErrorMsg()]);
         }
 
         $this->printJSON($json);
@@ -158,85 +158,60 @@ class Api
 
     public function disconnect()
     {
-        //$msg = ['msg' => 'false'];
+        $con_end = time();
         $json_msg = ['msg' => 'false'];
-        $con_fin = time(); //hora en la que cierras session
-
+        $con_start = $real_time = $internet_price = $balance = 0;
+        $dataLogout = '';
         if (!$this->checkSession()) {
-            $this->printJSON(['msg' => 'false']);
+            $this->printJSON($json_msg);
         }
 
         if (isset($_POST['dataLogout'], $_POST['con_ini'], $_POST['tiempo'],
             $_POST['tiempo_real'], $_POST['saldo'], $_POST['internet_price'])) {
             $dataLogout = $_POST['dataLogout'];
-            $con_ini = $_POST['con_ini'];
-            //$time_dis = $_POST['tiempo'];
-            $time_dis_real = $_POST['tiempo_real'];
-            $saldo_dis = $_POST['saldo'];
-            $centavosXhora = $_POST['internet_price'];
+            $con_start = $_POST['con_ini'];
+            $real_time = $_POST['tiempo_real'];
+            $balance = $_POST['saldo'];
+            $internet_price = $_POST['internet_price'];
         } else {
-            $this->printJSON(['msg' => 'false']);
+            $this->printJSON($json_msg);
         }
 
-        $horaEnSegundos = 3600;
-        $centavosXsegundo = $centavosXhora / $horaEnSegundos;
-        $SegundosXunCentavo = substr(1 / $centavosXsegundo, 0, 4);
+        if ($con_start !== 0) {
+            $spent_time = $con_end - $con_start;
+            $spent_money = ceil($internet_price * $spent_time / 36);
+            $real_time -= floor($spent_time / $internet_price * 36);
+            $balance = ($balance * 100 - $spent_money) / 100;
 
-        if ($con_ini != 0) {
-
-            $time_gastado = $con_fin - $con_ini;
-            $cant_centavos_gastados = ceil($time_gastado / $SegundosXunCentavo);
-            $time_dis_real -= $SegundosXunCentavo * $cant_centavos_gastados;
-            $time_dis = floor($time_dis_real);
-            $saldo_dis = $saldo_dis * 100 - $cant_centavos_gastados;
-            $saldo_dis /= 100;
-
-            if ($saldo_dis <= 0) {
-                $saldo_dis = 0;
-                $time_dis = 0;
+            if ($balance <= 0) {
+                $balance = 0;
+                $real_time = 0;
             }
 
-            $time_dis_json = $this->getAvailableTime($time_dis);
-
+            $time_dis_json = $this->getAvailableTime($real_time);
             $url = "https://secure.etecsa.net:8443/LogoutServlet?" . $dataLogout;
+            $response = $this->getResult($url, 'disconnect');
 
-            $ch = curl_init($url);
-
-            curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/x-www-form-urlencoded'));
-            curl_setopt($ch, CURLOPT_POST, 1);
-            curl_setopt($ch, CURLOPT_COOKIEJAR, 'libs\cookies');
-            curl_setopt($ch, CURLOPT_COOKIEFILE, 'libs\cookies');
-            curl_setopt($ch, CURLOPT_HEADER, TRUE);
-            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 1);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-
-            $info = curl_exec($ch);
-            curl_close($ch);
-
-            $response = preg_split("([\r]+)", $info);
-
-            foreach ($response as $line) {
-
-                if (strrpos($line, 'SUCCESS') != false) {//ULTIMA OCURRENCIA
-
-                    $json_msg = ['msg' => DISCONNECTED, 'saldo' => $saldo_dis, 'tiempo' => $time_dis_json];
-
-                } else if (strrpos($line, 'FAILURE') != false) {//ULTIMA OCURRENCIA
-
-                    $json_msg = ['msg' => DISCONNECTED, 'saldo' => $saldo_dis, 'tiempo' => $time_dis_json];
-
-                } else if (strrpos($line, 'request error') != false) {//ULTIMA OCURRENCIA
-
-                    $json_msg = ['msg' => NO_DISCONNECTED];
-
+            if (count($response) > 0) {
+                foreach ($response as $line) {
+                    if ($json_msg === ['msg' => 'false']) {
+                        foreach (DISCONNECT_STR as $value) {
+                            if (strrpos($line, $value) !== false) {
+                                if ($value === 'request error') {
+                                    $json_msg = ['msg' => NO_DISCONNECTED];
+                                } else {
+                                    $json_msg = ['msg' => DISCONNECTED, 'saldo' => $balance, 'tiempo' => $time_dis_json];
+                                }
+                                break;
+                            }
+                        }
+                    } else {
+                        break;
+                    }
                 }
             }
-
-            $this->printJSON($json_msg);
-
-        } else {
-            $this->printJSON(['msg' => 'false']);
         }
+        $this->printJSON($json_msg);
     }
 
     public function getTime()
@@ -306,7 +281,7 @@ class Api
         $this->printJSON($json);
     }
 
-    private function getAvailableTime($tiempo_en_segundos)
+    public function getAvailableTime($tiempo_en_segundos)
     {
         $horas = floor($tiempo_en_segundos / 3600);
         $minutos = floor(($tiempo_en_segundos - ($horas * 3600)) / 60);
@@ -327,36 +302,54 @@ class Api
 
     private function checkSession()
     {
-        return (isset($_SESSION['loged']) && $_SESSION['loged'] === 'true');
+        return (isset($_SESSION['login']) && $_SESSION['login'] === 'true');
     }
 
     public function methodExists(): bool
     {
         $url = $this->getURL();
-        return !method_exists(Api::class, $url[0]) || in_array($url[0], $this->deny_list);
+        return !method_exists(__CLASS__, $url[0]) || in_array($url[0], $this->getDenyList(), true);
     }
 
-    public function curlApi($url)
+    public function getResult($url, $action): array
     {
-        $ch = curl_init($url);
-
-        curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/x-www-form-urlencoded'));
-        curl_setopt($ch, CURLOPT_POST, 1);
-        curl_setopt($ch, CURLOPT_COOKIESESSION, 1);
-        curl_setopt($ch, CURLOPT_COOKIEJAR, 'libs\cookies');
-        curl_setopt($ch, CURLOPT_COOKIEFILE, 'libs\cookies');
-        curl_setopt($ch, CURLOPT_HEADER, TRUE);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 1);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        $info = curl_exec($ch);
-        curl_close($ch);
-        return $info;
+        if ($ch = curl_init($url)) {
+            curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/x-www-form-urlencoded'));
+            curl_setopt($ch, CURLOPT_POST, 1);
+            if ($action === 'connect') {
+                curl_setopt($ch, CURLOPT_COOKIESESSION, 1);
+            }
+            curl_setopt($ch, CURLOPT_COOKIEJAR, 'libs\cookies');
+            curl_setopt($ch, CURLOPT_COOKIEFILE, 'libs\cookies');
+            curl_setopt($ch, CURLOPT_HEADER, TRUE);
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 1);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            $result = preg_split("([\r]+)", curl_exec($ch));
+            curl_close($ch);
+            return $result;
+        }
+        return [];
     }
+
+    public function getHTTPMethod($method): bool
+    {
+        echo $_SERVER['REQUEST_METHOD'];
+        if ($_SERVER['REQUEST_METHOD'] === $method) {
+            return true;
+        }
+        $this->printJSON(['msg' => METHOD_NOT_ALLOWED]);
+        return false;
+    }
+
 
     public function printJSON($json): void
     {
-        header("Content-Type:application/json;charset=utf-8");
-        echo json_encode($json);
+        //header("Content-Type:application/json;charset=utf-8");
+        try {
+            echo json_encode($json, JSON_THROW_ON_ERROR);
+        } catch (Exception $e) {
+            echo ERROR_500;
+        }
         exit();
     }
 

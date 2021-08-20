@@ -26,7 +26,7 @@ define('DENY_LIST', array_map(static function ($method) {
 ]));
 
 //Web Scraping
-define('WEB_STRING',
+define('CONNECT_STR',
     [
         'ATTRIBUTE_UUID' => '15,-41',
         'CSRFHW' => '7,-16',
@@ -47,6 +47,8 @@ define('WEB_STRING',
     ]
 );
 
+define('DISCONNECT_STR', ['SUCCESS', 'FAILURE', 'request error']);
+
 //Personalizar mensajes de ETECSA solo cambie el segundo parámetro
 define('NO_CONECTADO', 'No hay conexión');
 define('CONECTADO', 'Usted está conectado');
@@ -59,3 +61,5 @@ define('YA_CONECTADO', 'Otro usuario está conectado');
 define('DISCONNECTED', 'Desconectado con éxito');
 define('NO_DISCONNECTED', 'No se pudo desconectar');
 define('ERROR_404', 'Error 404 Not Found');
+define('ERROR_500', 'Internal Server Error');
+define('METHOD_NOT_ALLOWED', 'Metodo HTTP no permitido');
